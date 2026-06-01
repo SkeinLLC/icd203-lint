@@ -1,0 +1,17 @@
+- id: icd203-lint
+  name: icd203-lint
+  description: 'Lint analytic writing for ICD-203 violations.'
+  entry: icd203-lint
+  language: python
+  types: [markdown]
+  args: ['--severity', 'warn']
+  pass_filenames: true
+
+- id: icd203-lint-strict
+  name: icd203-lint (strict)
+  description: 'Strict mode: only error-severity findings cause the hook to fail.'
+  entry: icd203-lint
+  language: python
+  types: [markdown]
+  args: ['--severity', 'error']
+  pass_filenames: true

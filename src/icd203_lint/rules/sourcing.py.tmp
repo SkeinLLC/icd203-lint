@@ -1,0 +1,76 @@
+"""Rule: single-source-overconfidence.
+
+Flags moderate or high confidence claims that are not corroborated by at
+least two distinct source mentions in a small window around the claim.
+
+The detector uses three signals, in order:
+
+  1. Anti-corroboration: words like "single", "lone", "sole", "one" right
+     before a source noun ("a single Mandiant blog post"). When present,
+     the claim is single-source by the analyst's own admission. Flag.
+
+  2. Corroboration signals: connector words like "and", "plus", "as well
+     as", "alongside", "corroborating", "corroborated", "joint" between or
+     near source mentions. When present, treat the claim as multi-source.
+     Skip.
+
+  3. Distinct vendor / generic source counting. If at least two distinct
+     vendor names or two generic source nouns are present in the window,
+     skip. Otherwise, flag.
+
+ICD-203 §2(a): source quality and credibility.
+"""
+
+from __future__ import annotations
+
+import re
+
+from icd203_lint.core import Document, Finding, Severity
+from icd203_lint.rules.base import Rule, VENDOR_SOURCE_RE
+
+# Generic source nouns. "reports / reporting / reported" all share the same
+# stem; we let one stem count once.
+_GENERIC_SOURCE_RE = re.compile(
+    r"\b(?:report(?:s|ing|ed)?|advisor(?:y|ies)|blog(?:s|\s+post)?|writeup|"
+    r"post(?:s)?|paper(?:s)?|stud(?:y|ies)|note(?:s)?|telemetry|"
+    r"bulletin|briefing|incident|signal|finding(?:s)?)\b",
+    re.IGNORECASE,
+)
+_CITATION_RE = re.compile(r"\[\^[\w-]+\]|\[[^\]]+\]\([^)]+\)")
+_HIGH_OR_MOD_CONF_RE = re.compile(
+    r"\b(?:moderate|high)\s+confidence\b"
+    r"|\b(?:moderate|high)-confidence\b"
+    r"|\bwith\s+(?:moderate|high)\s+confidence\b",
+    re.IGNORECASE,
+)
+
+# Anti-corroboration: "single", "lone", "sole", "one" right before a source noun.
+_ANTI_CORROB_RE = re.compile(
+    r"\b(?:single|lone|sole|one)\s+"
+    r"(?:[A-Z][\w-]*\s+)?"  # optional vendor / proper noun
+    r"(?:[A-Z][\w-]*\s+)?"
+    r"(?:report|advisory|blog|post|paper|writeup|study|note|source|signal|tip)\b",
+    re.IGNORECASE,
+)
+
+# Multi-source signal phrases. If present in the window, we treat the claim
+# as having corroboration even if the count heuristic comes up short.
+_CORROB_RE = re.compile(
+    r"\b(?:corroborating|corroborated|corroboration"
+    r"|joint(?:ly)?(?:\s+(?:advisory|reporting|report))?"
+    r"|two\s+independent|three\s+independent|multiple\s+independent"
+    r"|multiple\s+(?:sources|reports|advisories|vendors)"
+    r"|cross-?referenced|cross-?checked"
+    r"|also\s+reported\s+by|separately\s+confirmed)\b",
+    re.IGNORECASE,
+)
+
+
+def _count_distinct_sources(text: str) -> int:
+    vendors: set[str] = set()
+    for m in VENDOR_SOURCE_RE.finditer(text):
+        vendors.add(m.group(0).lower().replace(" ", ""))
+    # Normalize generic source nouns by stem so "report" / "reporting" / "reported"
+    # all count once.
+    generic_stems: set[str] = set()
+    for m i

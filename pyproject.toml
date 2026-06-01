@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "icd203-lint"
+version = "0.1.0"
+description = "A linter for analytic writing. Flags missing confidence, unsourced attribution, single-source overconfidence, and other ICD-203 violations."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Paul Goodwin" }]
+requires-python = ">=3.10"
+keywords = [
+  "cti",
+  "threat-intelligence",
+  "icd-203",
+  "analytic-tradecraft",
+  "linter",
+  "writing",
+  "security",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Information Technology",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Security",
+  "Topic :: Text Processing :: Linguistic",
+]
+dependencies = []
+
+[project.optional-dependencies]
+color = ["rich>=13.7"]
+dev = ["pytest>=8", "ruff>=0.4", "build>=1.2"]
+
+[project.scripts]
+icd203-lint = "icd203_lint.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/SkeinLLC/icd203-lint"
+Issues = "https://github.com/SkeinLLC/icd203-lint/issues"
+Primer = "https://github.com/SkeinLLC/icd203-lint/blob/main/docs/icd203-primer.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+icd203_lint = ["data/*.txt"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
